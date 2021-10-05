@@ -312,17 +312,21 @@ func apiTeam(login string, slug string) (*[]memberStatus, error) {
 	}
 	// TODO: supports over 100 members
 	query := fmt.Sprintf(
-		`query {
-      organization(login:"%s") {
+		`query($login: String!) {
+      organization(login: $login) {
         team(slug:"%s") {
           memberStatuses(first: 100) {
             nodes { indicatesLimitedAvailability message emoji user { login } }
           }
         }
       }
-    }`, login, slug)
+    }`, slug)
 
-	args := []string{"api", "graphql", "-f", fmt.Sprintf("query=%s", query)}
+	args := []string{
+		"api", "graphql",
+		"-f", fmt.Sprintf("query=%s", query),
+		"-F", fmt.Sprintf("login=%s", login),
+	}
 	sout, _, err := gh(args...)
 	if err != nil {
 		return nil, err
