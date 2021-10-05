@@ -106,6 +106,14 @@ func setCmd() *cobra.Command {
 			if len(args) > 0 {
 				opts.Message = args[0]
 			}
+
+			em := newEmojiManager()
+			if opts.Message == "" {
+				err := prompt(em, &opts)
+				if err != nil {
+					return err
+				}
+			}
 			return runSet(opts)
 		},
 	}
@@ -119,12 +127,6 @@ func setCmd() *cobra.Command {
 
 func runSet(opts setOptions) error {
 	em := newEmojiManager()
-	if opts.Message == "" {
-		err := prompt(em, &opts)
-		if err != nil {
-			return err
-		}
-	}
 	// TODO org flag -- punted on this bc i have to resolve an org ID and it didn't feel worth it.
 	mutation := `mutation($emoji: String!, $message: String!, $limited: Boolean!, $expiry: DateTime) {
 		changeUserStatus(input: {emoji: $emoji, message: $message, limitedAvailability: $limited, expiresAt: $expiry}) {
@@ -145,7 +147,10 @@ func runSet(opts setOptions) error {
 		expiry = time.Now().Add(opts.Expiry).Format("2006-01-02T15:04:05-0700")
 	}
 
-	emoji := fmt.Sprintf(":%s:", opts.Emoji)
+	emoji := ""
+	if opts.Emoji != "" {
+		emoji = fmt.Sprintf(":%s:", opts.Emoji)
+	}
 
 	cmdArgs := []string{
 		"api", "graphql",
@@ -205,6 +210,18 @@ func runSet(opts setOptions) error {
 	fmt.Println(em.ReplaceAll(msg))
 
 	return nil
+}
+
+func clearCmd() *cobra.Command {
+	opts := setOptions{Message: "", Limited: false, Emoji: ""}
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "clear your GitHub status",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSet(opts)
+		},
+	}
 }
 
 type getOptions struct {
@@ -285,6 +302,7 @@ func apiStatus(login string) (*status, error) {
 func main() {
 	rc := rootCmd()
 	rc.AddCommand(setCmd())
+	rc.AddCommand(clearCmd())
 	rc.AddCommand(getCmd())
 
 	if err := rc.Execute(); err != nil {
