@@ -250,8 +250,37 @@ type status struct {
 }
 
 func runGet(opts getOptions) error {
-	em := newEmojiManager()
+	if strings.Contains(opts.Login, "/") {
+		return runGetTeam(opts)
+	} else {
+		return runGetUser(opts)
+	}
+}
 
+func runGetTeam(opts getOptions) error {
+	arr := strings.Split(opts.Login, "/")
+	login, slug := arr[0], arr[1]
+	nodes, err := apiTeam(login, slug)
+	if err != nil {
+		return err
+	}
+
+	em := newEmojiManager()
+	for _, n := range *nodes {
+		availability := ""
+		if n.IndicatesLimitedAvailability {
+			availability = "(availability is limited)"
+		}
+		msg := fmt.Sprintf("%s: %s %s %s", n.User.Login, n.Emoji, n.Message, availability)
+
+		fmt.Println(em.ReplaceAll(msg))
+	}
+
+	return nil
+}
+
+func runGetUser(opts getOptions) error {
+	em := newEmojiManager()
 	s, err := apiStatus(opts.Login)
 	if err != nil {
 		return err
@@ -266,6 +295,57 @@ func runGet(opts getOptions) error {
 	fmt.Println(em.ReplaceAll(msg))
 
 	return nil
+}
+
+type memberStatus struct {
+	IndicatesLimitedAvailability bool
+	Message                      string
+	Emoji                        string
+	User                         struct {
+		Login string
+	}
+}
+
+func apiTeam(login string, slug string) (*[]memberStatus, error) {
+	if login == "" {
+		login = "{owner}"
+	}
+	// TODO: supports over 100 members
+	query := fmt.Sprintf(
+		`query {
+      organization(login:"%s") {
+        team(slug:"%s") {
+          memberStatuses(first: 100) {
+            nodes { indicatesLimitedAvailability message emoji user { login } }
+          }
+        }
+      }
+    }`, login, slug)
+
+	args := []string{"api", "graphql", "-f", fmt.Sprintf("query=%s", query)}
+	sout, _, err := gh(args...)
+	if err != nil {
+		return nil, err
+	}
+
+	type response struct {
+		Data struct {
+			Organization struct {
+				Team struct {
+					MemberStatuses struct {
+						Nodes []memberStatus
+					}
+				}
+			}
+		}
+	}
+	var resp response
+	err = json.Unmarshal(sout.Bytes(), &resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize JSON: %w", err)
+	}
+
+	return &resp.Data.Organization.Team.MemberStatuses.Nodes, nil
 }
 
 func apiStatus(login string) (*status, error) {
